@@ -11,11 +11,16 @@ It prominently features the LB1836_ motor driver and the LM358_ op-amp, as well 
 
 The digital communication protocol used by the Power Functions system is documented on `Philo's Awesome Page`_.
 
+
 Requirements
 ------------
 
 - Python 2.7+
 - pyusb (setup.py should take care of installing the dependency)
+- OSX Specific: `hidapi`_
+- OSX specific: `cython`_
+- OSX specific: `cython-hidapi`_
+
 
 Installation
 ------------
@@ -43,6 +48,8 @@ How to Use it
     # Current distance value in meters of the distance sensor:
     >>> wd.distance
 
+Note that Mac support is currently limited to motor control.
+
 Contributors
 ------------
 
@@ -58,6 +65,8 @@ Tony Forster
 
 `Alan Aguiar`_
 
+`Robin Macharg`_
+
 .. _`Lego WeDo`: http://education.lego.com/en-us/lego-education-product-database/wedo/9580-lego-education-wedo-construction-set/
 .. _LB1836: http://semicon.sanyo.com/en/ds_e/EN3947F.pdf
 .. _LM358: http://www.national.com/ds/LM/LM158.pdf
@@ -68,4 +77,9 @@ Tony Forster
 .. _`Walter Bender`: https://github.com/walterbender
 .. _`Joshua Coxwell`: https://github.com/JCoxwell
 .. _`Alan Aguiar`: https://github.com/alanjas
+.. _`Robin Macharg`: https://github.com/robinmacharg
+.. _`hidapi`: http://www.signal11.us/oss/hidapi/
+.. _`cython`: http://cython.org/
+.. _`cython-hidapi`: https://github.com/pebble/cython-hidapi
+
 
