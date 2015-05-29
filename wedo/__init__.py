@@ -6,8 +6,13 @@ from wedo.tilt import process_tilt
 from wedo.tilt import FLAT, TILT_BACK, TILT_FORWARD, TILT_LEFT, TILT_RIGHT
 
 import os
+import platform
 import usb.core
 import logging
+
+if platform.system() == "Darwin":
+    import hid
+
 
 logger = logging.getLogger('wedo')
 
@@ -27,11 +32,26 @@ __all__ = ["scan_for_devices", "WeDo", "FLAT", "TILT_BACK", "TILT_FORWARD", "TIL
 def scan_for_devices():
     """ Find all available devices """
     devices = []
-    try:
-        for dev in usb.core.find(find_all=True, idVendor=ID_VENDOR, idProduct=ID_PRODUCT):
-            devices.append(dev)
-    except usb.core.USBError as e:
-        logger.error("Could not find a connected WeDo device: %s" % str(e))
+
+    if platform.system() == "Darwin":
+        for dev in hid.enumerate(0, 0):
+
+            if dev["vendor_id"] == ID_VENDOR and dev["product_id"] == ID_PRODUCT:
+                print dev
+                devices.append(hid.device(dev["vendor_id"], dev["product_id"]))
+
+        if len(devices) == 0:
+            raise "Could not find a connected WeDo device"
+    else:
+
+        try:
+            for dev in usb.core.find(find_all=True, idVendor=ID_VENDOR, idProduct=ID_PRODUCT):
+                devices.append(dev)
+        except usb.core.USBError as e:
+            logger.error("Could not find a connected WeDo device: %s" % str(e))
+
+    print devices
+
     return devices
 
 class WeDo(object):
@@ -77,25 +97,31 @@ class WeDo(object):
         """
         Reinit device associated with the WeDo instance
         """
-        try:
-            if os.name != 'nt' and self.dev.is_kernel_driver_active(WEDO_INTERFACE):
-                try:
-                    self.dev.detach_kernel_driver(WEDO_INTERFACE)
-                except usb.core.USBError as e:
-                    logger.error("Could not detatch kernel driver: %s" % str(e))
-            self.dev.set_configuration(WEDO_CONFIGURATION)
-            self.endpoint = self.dev[0][(0, 0)][0]
-        except usb.core.USBError as e:
-            logger.error("Could not init device: %s" % str(e))
+        if platform.system() == "Darwin":
+            pass
+        else:
+            try:
+                if os.name != 'nt' and self.dev.is_kernel_driver_active(WEDO_INTERFACE):
+                    try:
+                        self.dev.detach_kernel_driver(WEDO_INTERFACE)
+                    except usb.core.USBError as e:
+                        logger.error("Could not detatch kernel driver: %s" % str(e))
+                self.dev.set_configuration(WEDO_CONFIGURATION)
+                self.endpoint = self.dev[0][(0, 0)][0]
+            except usb.core.USBError as e:
+                logger.error("Could not init device: %s" % str(e))
 
     def getRawData(self):
         """Read 64 bytes from the WeDo's endpoint, but only
         return the last eight."""
-        try:
-            return self.endpoint.read(64)[-8:]
-        except usb.core.USBError as e:
-            logger.exception("Could not read from WeDo device")
-        return None
+        if platform.system() == "Darwin":
+            raise NotImplementedError("Not yet implemented for OSX")
+        else:
+            try:
+                return self.endpoint.read(64)[-8:]
+            except usb.core.USBError as e:
+                logger.exception("Could not read from WeDo device")
+            return None
 
     def setMotors(self):
         """
@@ -103,12 +129,25 @@ class WeDo(object):
         and 100, positive or negative. Magic numbers used for
         the ctrl_transfer derived from sniffing USB coms.
         """
-        data = [64, processMotorValues(self.valMotorA) & 0xFF, processMotorValues(self.valMotorB) & 0xFF,
-                0x00, 0x00, 0x00, 0x00, 0x00]
-        try:
-            self.dev.ctrl_transfer(bmRequestType=0x21, bRequest=0x09, wValue=0x0200, wIndex=0, data_or_wLength=data)
-        except usb.core.USBError as e:
-            logger.exception("Could not write to driver")
+
+        if platform.system() == "Darwin":
+            # HID report_num, msg_type, motor A, motor B
+            data = [0x0, 0x40,
+                    processMotorValues(self.valMotorA) & 0xFF,
+                    processMotorValues(self.valMotorB) & 0xFF,
+                    0x00, 0x00, 0x00, 0x00, 0x00]
+            try:
+                self.dev.write(data)
+            except:
+                logger.exception("Could not write to driver")
+        else:
+
+            data = [64, processMotorValues(self.valMotorA) & 0xFF, processMotorValues(self.valMotorB) & 0xFF,
+                    0x00, 0x00, 0x00, 0x00, 0x00]
+            try:
+                self.dev.ctrl_transfer(bmRequestType=0x21, bRequest=0x09, wValue=0x0200, wIndex=0, data_or_wLength=data)
+            except usb.core.USBError as e:
+                logger.exception("Could not write to driver")
 
     def getData(self):
         """
@@ -116,44 +155,56 @@ class WeDo(object):
         sensor IDs being contained in the 3rd and 5th byte
         respectively.
         """
-        rawData = self.getRawData()
-        if rawData is not None:
-            sensorData = {rawData[3]: rawData[2], rawData[5]: rawData[4]}
+        if platform.system() == "Darwin":
+            raise NotImplementedError("Not yet implemented for OSX")
         else:
-            sensorData = {}
-        return sensorData
+            rawData = self.getRawData()
+            if rawData is not None:
+                sensorData = {rawData[3]: rawData[2], rawData[5]: rawData[4]}
+            else:
+                sensorData = {}
+            return sensorData
 
     @property
     def raw_tilt(self):
         """
         Returns the raw tilt direction (arbitrary units)
         """
-        data = self.getData()
-        for num in data:
-            if num in TILTSENSOR:
-                return data[num]
-        return UNAVAILABLE
+        if platform.system() == "Darwin":
+            raise NotImplementedError("Not yet implemented for OSX")
+        else:
+            data = self.getData()
+            for num in data:
+                if num in TILTSENSOR:
+                    return data[num]
+            return UNAVAILABLE
 
     @property
     def tilt(self):
         """
         Returns the tilt direction (one of the FLAT, TILT_FORWARD, TILT_LEFT, TILT_RIGHT, TILT_BACK constants)
         """
-        raw_data = self.raw_tilt
-        if raw_data is UNAVAILABLE:
-            return UNAVAILABLE
-        return process_tilt(raw_data)
+        if platform.system() == "Darwin":
+            raise NotImplementedError("Not yet implemented for OSX")
+        else:
+            raw_data = self.raw_tilt
+            if raw_data is UNAVAILABLE:
+                return UNAVAILABLE
+            return process_tilt(raw_data)
 
     @property
     def raw_distance(self):
         """
         Return the raw evaluated distance from the distance meter (arbitrary units)
         """
-        data = self.getData()
-        for num in data:
-            if num in DISTANCESENSOR:
-                return data[num]
-        return UNAVAILABLE
+        if platform.system() == "Darwin":
+            raise NotImplementedError("Not yet implemented for OSX")
+        else:
+            data = self.getData()
+            for num in data:
+                if num in DISTANCESENSOR:
+                    return data[num]
+            return UNAVAILABLE
 
     @property
     def distance(self):
@@ -161,11 +212,13 @@ class WeDo(object):
         Return the evaluated distance in meters from the distance meter.
         (Note: this is the ideal distance without any objets on the side, you might have to adapt it depending on your construction)
         """
-
-        raw_data = self.raw_distance
-        if raw_data is UNAVAILABLE:
-            return UNAVAILABLE
-        return interpolate_distance_data(raw_data)
+        if platform.system() == "Darwin":
+            raise NotImplementedError("Not yet implemented for OSX")
+        else:
+            raw_data = self.raw_distance
+            if raw_data is UNAVAILABLE:
+                return UNAVAILABLE
+            return interpolate_distance_data(raw_data)
 
     @property
     def motor_a(self):
